@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, RefreshCw, Settings, Trash2, AlertCircle, Paperclip, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Send, RefreshCw, Settings, Trash2, AlertCircle, Paperclip, Search, ChevronDown, ChevronUp, History } from 'lucide-react';
 import Message from './Message';
 import ModelSelector from './ModelSelector';
 import FileUpload from './FileUpload';
 import VoiceChat from './VoiceChat';
 import ResearchPanel from './ResearchPanel';
 import CitationCard from './CitationCard';
+import ChatHistory from './ChatHistory';
 import { callOpenAI, transcribeAudio, analyzeDocument } from '../utils/openai';
 import { performWebSearch, getResearchPrompt, formatResearchResponse } from '../utils/research';
+import { useChatHistory } from '../hooks/useChatHistory';
 
 const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
   const [messages, setMessages] = useState([]);
@@ -24,8 +26,22 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
   const [isResearching, setIsResearching] = useState(false);
   const [citations, setCitations] = useState([]);
   const [showCitations, setShowCitations] = useState(false);
+  const [showChatHistory, setShowChatHistory] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Chat history hook
+  const {
+    chatHistory,
+    currentChatId,
+    createNewChat,
+    saveChat,
+    loadChat,
+    deleteChat,
+    clearAllHistory,
+    getCurrentChat,
+    setCurrentChatId
+  } = useChatHistory();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -40,6 +56,13 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
       inputRef.current?.focus();
     }
   }, [isLoading]);
+
+  // Auto-save chat when messages change
+  useEffect(() => {
+    if (messages.length > 0 && currentChatId) {
+      saveChat(currentChatId, messages);
+    }
+  }, [messages, currentChatId, saveChat]);
 
   const handleFileUpload = (fileData) => {
     setUploadedFiles(prev => [...prev, fileData]);
@@ -89,6 +112,47 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
     }
   };
 
+  const handleNewChat = () => {
+    const newChatId = createNewChat();
+    setMessages([]);
+    setError('');
+    setUploadedFiles([]);
+    setCitations([]);
+    setShowCitations(false);
+    inputRef.current?.focus();
+  };
+
+  const handleLoadChat = (chatId) => {
+    const chatMessages = loadChat(chatId);
+    setMessages(chatMessages);
+    setError('');
+    setUploadedFiles([]);
+    setCitations([]);
+    setShowCitations(false);
+  };
+
+  const handleDeleteChat = (chatId) => {
+    deleteChat(chatId);
+    if (currentChatId === chatId) {
+      setMessages([]);
+      setError('');
+      setUploadedFiles([]);
+      setCitations([]);
+      setShowCitations(false);
+    }
+  };
+
+  const handleClearAllHistory = () => {
+    if (window.confirm('Are you sure you want to clear all chat history? This cannot be undone.')) {
+      clearAllHistory();
+      setMessages([]);
+      setError('');
+      setUploadedFiles([]);
+      setCitations([]);
+      setShowCitations(false);
+    }
+  };
+
   const processFiles = async () => {
     const processedContent = [];
     
@@ -110,6 +174,12 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
 
   const handleSend = async () => {
     if ((!input.trim() && uploadedFiles.length === 0) || isLoading) return;
+
+    // Create new chat if none exists
+    let chatId = currentChatId;
+    if (!chatId) {
+      chatId = createNewChat();
+    }
 
     let messageContent = input.trim();
     let isResearchQuery = false;
@@ -211,6 +281,9 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
     setMessages([]);
     setError('');
     setUploadedFiles([]);
+    setCitations([]);
+    setShowCitations(false);
+    setCurrentChatId(null);
     inputRef.current?.focus();
   };
 
@@ -263,7 +336,8 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-br from-gray-50 to-white">
+    <div className="flex h-full bg-gradient-to-br from-gray-50 to-white">
+      <div className="flex flex-col flex-1">
       {/* Header */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -293,6 +367,17 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
             title="Research Tools"
           >
             <Search size={18} />
+          </button>
+          <button
+            onClick={() => setShowChatHistory(!showChatHistory)}
+            className={`p-2 rounded-lg transition-colors ${
+              showChatHistory
+                ? 'bg-blue-100 text-blue-600'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+            }`}
+            title="Chat History"
+          >
+            <History size={18} />
           </button>
           {messages.length > 0 && (
             <button
@@ -340,6 +425,10 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
                 <div className="p-3 bg-white/60 border border-gray-200 rounded-xl text-left">
                   <div className="font-medium text-gray-800">🔍 Deep Research:</div>
                   <div className="text-gray-600 mt-1">Web search and analysis tools</div>
+                </div>
+                <div className="p-3 bg-white/60 border border-gray-200 rounded-xl text-left">
+                  <div className="font-medium text-gray-800">📚 Chat History:</div>
+                  <div className="text-gray-600 mt-1">Save and revisit conversations</div>
                 </div>
               </div>
             </div>
@@ -515,6 +604,21 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
           </p>
         </div>
       </div>
+      </div>
+
+      {/* Chat History Panel */}
+      {showChatHistory && (
+        <ChatHistory
+          chatHistory={chatHistory}
+          currentChatId={currentChatId}
+          onLoadChat={handleLoadChat}
+          onDeleteChat={handleDeleteChat}
+          onNewChat={handleNewChat}
+          onClearAllHistory={handleClearAllHistory}
+          isOpen={showChatHistory}
+          onToggle={() => setShowChatHistory(!showChatHistory)}
+        />
+      )}
     </div>
   );
 };
