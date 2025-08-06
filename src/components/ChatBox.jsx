@@ -172,7 +172,7 @@ const ChatBox = ({ apiKeys, onOpenKeyManager, onClearKeys }) => {
             throw new Error(`API key required for ${modelConfig?.provider}`);
           }
           const analysis = await analyzeDocument(file.content, file.name, requiredKey, selectedModel);
-         
+          // const requiredKey = apiKeys?.[modelConfig?.provider]; 
           if (!requiredKey) {
             throw new Error(`API key required for ${modelConfig?.provider}`);
           }
