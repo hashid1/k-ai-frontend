@@ -1,43 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import ChatBox from './components/ChatBox';
-import KeyModal from './components/KeyModal';
+import ApiKeyManager from './components/ApiKeyManager';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
 function App() {
-  const [apiKey, setApiKey, removeApiKey] = useLocalStorage('openai-api-key', '');
-  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [apiKeys, setApiKeys, removeApiKeys] = useLocalStorage('ai-api-keys', {});
+  const [isKeyManagerOpen, setIsKeyManagerOpen] = useState(false);
   const [isAppReady, setIsAppReady] = useState(false);
 
   useEffect(() => {
     // Check if we have an API key on mount
     const timer = setTimeout(() => {
-      if (!apiKey) {
-        setIsKeyModalOpen(true);
+      if (!apiKeys || Object.keys(apiKeys).length === 0) {
+        setIsKeyManagerOpen(true);
       }
       setIsAppReady(true);
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [apiKey]);
+  }, [apiKeys]);
 
-  const handleSaveKey = (newKey) => {
-    setApiKey(newKey);
-    setIsKeyModalOpen(false);
+  const handleSaveKeys = (newKeys) => {
+    setApiKeys(newKeys);
+    setIsKeyManagerOpen(false);
   };
 
-  const handleOpenKeyModal = () => {
-    setIsKeyModalOpen(true);
+  const handleOpenKeyManager = () => {
+    setIsKeyManagerOpen(true);
   };
 
-  const handleCloseKeyModal = () => {
-    if (apiKey) {
-      setIsKeyModalOpen(false);
+  const handleCloseKeyManager = () => {
+    if (apiKeys && Object.keys(apiKeys).length > 0) {
+      setIsKeyManagerOpen(false);
     }
   };
 
-  const handleClearKey = () => {
-    removeApiKey();
-    setIsKeyModalOpen(true);
+  const handleClearKeys = () => {
+    removeApiKeys();
+    setIsKeyManagerOpen(true);
   };
 
   if (!isAppReady) {
@@ -58,17 +58,17 @@ function App() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <div className="h-screen flex flex-col">
         <ChatBox
-          apiKey={apiKey}
-          onOpenKeyModal={handleOpenKeyModal}
-          onClearKey={handleClearKey}
+          apiKeys={apiKeys}
+          onOpenKeyManager={handleOpenKeyManager}
+          onClearKeys={handleClearKeys}
         />
       </div>
 
-      <KeyModal
-        isOpen={isKeyModalOpen}
-        onSave={handleSaveKey}
-        onClose={handleCloseKeyModal}
-        existingKey={apiKey}
+      <ApiKeyManager
+        isOpen={isKeyManagerOpen}
+        onSaveKeys={handleSaveKeys}
+        onClose={handleCloseKeyManager}
+        apiKeys={apiKeys}
       />
     </div>
   );

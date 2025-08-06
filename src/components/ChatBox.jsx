@@ -7,11 +7,12 @@ import VoiceChat from './VoiceChat';
 import ResearchPanel from './ResearchPanel';
 import CitationCard from './CitationCard';
 import ChatHistory from './ChatHistory';
-import { callOpenAI, transcribeAudio, analyzeDocument } from '../utils/openai';
+import { callAI, AI_MODELS } from '../utils/aiProviders';
+import { transcribeAudio, analyzeDocument } from '../utils/openai';
 import { performWebSearch, getResearchPrompt, formatResearchResponse } from '../utils/research';
 import { useChatHistory } from '../hooks/useChatHistory';
 
-const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
+const ChatBox = ({ apiKeys, onOpenKeyManager, onClearKeys }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -75,7 +76,11 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
   const handleVoiceTranscription = async (audioBlob) => {
     setIsUploading(true);
     try {
-      const transcription = await transcribeAudio(audioBlob, apiKey);
+      const openaiKey = apiKeys?.openai;
+      if (!openaiKey) {
+        throw new Error('OpenAI API key required for voice transcription');
+      }
+      const transcription = await transcribeAudio(audioBlob, openaiKey);
       setInput(prev => prev + (prev ? ' ' : '') + transcription);
     } catch (error) {
       setError('Voice transcription failed: ' + error.message);
@@ -161,7 +166,17 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
         processedContent.push(`[Image: ${file.name}]`);
       } else {
         try {
-          const analysis = await analyzeDocument(file.content, file.name, apiKey, selectedModel);
+          const modelConfig = AI_MODELS.find(m => m.id === selectedModel);
+          const requiredKey = apiKeys?.[modelConfig?.provider];
+          if (!requiredKey) {
+            throw new Error(`API key required for ${modelConfig?.provider}`);
+          }
+          const analysis = await analyzeDocument(file.content, file.name, requiredKey, selectedModel);
+          const requiredKey = apiKeys?.[modelConfig?.provider];
+          if (!requiredKey) {
+            throw new Error(`API key required for ${modelConfig?.provider}`);
+          }
+          const analysis = await analyzeDocument(file.content, file.name, requiredKey, selectedModel);
           processedContent.push(`[Document Analysis for ${file.name}]: ${analysis}`);
         } catch (error) {
           processedContent.push(`[Error analyzing ${file.name}]: ${error.message}`);
@@ -226,16 +241,23 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
     setIsLoading(true);
 
     try {
+      // Check if we have the required API key for the selected model
+      const modelConfig = AI_MODELS.find(m => m.id === selectedModel);
+      if (!modelConfig || !apiKeys?.[modelConfig.provider]) {
+        throw new Error(`API key required for ${modelConfig?.provider || 'this provider'}. Please configure your API keys.`);
+      }
+
       const conversationHistory = newMessages.map(msg => ({
         role: msg.isUser ? 'user' : 'assistant',
         content: msg.text
       }));
 
-      let response;
-      if (selectedModel.includes('dall-e')) {
-        // For image generation, use the last user message as prompt
-        response = await callOpenAI([{ role: 'user', content: input.trim() }], apiKey, selectedModel);
-        // Response will be an image URL for DALL-E models
+      const response = await callAI(conversationHistory, apiKeys, selectedModel);
+      
+      // Check if this is an image generation model
+      const isImageModel = modelConfig.type === 'image';
+      
+      if (isImageModel) {
         setMessages(prev => [
           ...prev,
           { 
@@ -248,7 +270,6 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
           }
         ]);
       } else {
-        response = await callOpenAI(conversationHistory, apiKey, selectedModel);
         setMessages(prev => [
           ...prev,
           { 
@@ -314,7 +335,13 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
           content: msg.text
         }));
 
-        const response = await callOpenAI(conversationHistory, apiKey, lastUserMessage.model || selectedModel);
+        const modelToUse = lastUserMessage.model || selectedModel;
+        const modelConfig = AI_MODELS.find(m => m.id === modelToUse);
+        if (!modelConfig || !apiKeys?.[modelConfig.provider]) {
+          throw new Error(`API key required for ${modelConfig?.provider || 'this provider'}`);
+        }
+
+        const response = await callAI(conversationHistory, apiKeys, modelToUse);
         
         setMessages(prev => [
           ...prev,
@@ -323,7 +350,7 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
             text: response, 
             isUser: false, 
             timestamp: Date.now(),
-            model: lastUserMessage.model || selectedModel
+            model: modelToUse
           }
         ]);
       } catch (error) {
@@ -389,7 +416,7 @@ const ChatBox = ({ apiKey, onOpenKeyModal, onClearKey }) => {
             </button>
           )}
           <button
-            onClick={onOpenKeyModal}
+            onClick={onOpenKeyManager}
             className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             title="API Settings"
           >
